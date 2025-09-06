@@ -130,8 +130,7 @@ const VideoPortal = () => {
   return (
     <div className="video-portal" onClick={handleUserInteraction}>
       <header className="portal-header">
-  <h1>Video News Portal</h1>
-  <Link to="/admin" className="admin-link">Admin</Link>
+        <h1>Video News Portal</h1>
       </header>
       <div className="video-container">
         <div ref={playerRef} className="player"></div>
