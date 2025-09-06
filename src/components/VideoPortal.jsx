@@ -1,11 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
-import { Link } from 'react-router-dom';
 
 const VideoPortal = () => {
   const [currentVideoIndex, setCurrentVideoIndex] = useState(0);
   const [headline, setHeadline] = useState("🔴 Breaking News: This is scrolling text at the bottom just like a news channel ticker!");
-  const [isMuted, setIsMuted] = useState(true);
-  const [userInteracted, setUserInteracted] = useState(false);
+  // Try to start unmuted; we'll fall back to muted if the browser blocks autoplay with sound.
+  const [isMuted, setIsMuted] = useState(false);
   const playerRef = useRef(null);
   const playerObjRef = useRef(null);
 
@@ -23,21 +22,7 @@ const VideoPortal = () => {
     "🔬 Scientific discovery could lead to new medical treatments"
   ];
 
-  const handleUserInteraction = () => {
-    if (!userInteracted && playerObjRef.current) {
-      setUserInteracted(true);
-      setIsMuted(false);
-      playerObjRef.current.unMute();
-      playerObjRef.current.playVideo();
-    }
-  };
-
   useEffect(() => {
-    const interactionEvents = ['click', 'touchstart', 'keydown'];
-    interactionEvents.forEach(event => {
-      document.addEventListener(event, handleUserInteraction, { once: true });
-    });
-
     if (!window.YT) {
       const tag = document.createElement('script');
       tag.src = "https://www.youtube.com/iframe_api";
@@ -55,9 +40,6 @@ const VideoPortal = () => {
 
     return () => {
       clearInterval(headlineInterval);
-      interactionEvents.forEach(event => {
-        document.removeEventListener(event, handleUserInteraction);
-      });
       if (playerObjRef.current) {
         playerObjRef.current.destroy();
       }
@@ -74,6 +56,30 @@ const VideoPortal = () => {
     }
   }, [currentVideoIndex, videos]);
 
+  const tryAutoPlayWithSound = (player) => {
+    // Best-effort: attempt unmuted autoplay; if blocked, fallback to muted autoplay.
+    try {
+      player.unMute();
+      setIsMuted(false);
+    } catch {}
+    player.playVideo();
+    // Check shortly after whether it actually started playing with sound.
+    setTimeout(() => {
+      try {
+        const state = player.getPlayerState();
+        const mutedNow = player.isMuted && player.isMuted();
+        if (state !== window.YT.PlayerState.PLAYING || mutedNow) {
+          player.mute();
+          setIsMuted(true);
+          player.playVideo();
+        }
+      } catch {
+        // As a last resort, ensure muted autoplay.
+        try { player.mute(); setIsMuted(true); player.playVideo(); } catch {}
+      }
+    }, 600);
+  };
+
   const initializePlayer = () => {
     playerObjRef.current = new window.YT.Player(playerRef.current, {
       videoId: videos[currentVideoIndex].id,
@@ -87,10 +93,12 @@ const VideoPortal = () => {
       },
       events: {
         'onReady': (event) => {
-          event.target.playVideo();
-          if (event.target.getPlayerState() !== window.YT.PlayerState.PLAYING) {
-            event.target.playVideo();
-          }
+          // Allow autoplay explicitly on the iframe and try to start with sound.
+          try {
+            const iframe = event.target.getIframe ? event.target.getIframe() : (playerRef.current?.querySelector('iframe'));
+            if (iframe) iframe.setAttribute('allow', 'autoplay; encrypted-media; picture-in-picture');
+          } catch {}
+          tryAutoPlayWithSound(event.target);
         },
         'onStateChange': onPlayerStateChange,
         'onError': onPlayerError
@@ -99,10 +107,6 @@ const VideoPortal = () => {
   };
 
   const onPlayerStateChange = (event) => {
-    if (event.data === window.YT.PlayerState.PAUSED && !userInteracted) {
-      event.target.playVideo();
-    }
-    
     if (event.data === window.YT.PlayerState.ENDED) {
       const nextIndex = (currentVideoIndex + 1) % videos.length;
       setCurrentVideoIndex(nextIndex);
@@ -128,7 +132,7 @@ const VideoPortal = () => {
   };
 
   return (
-    <div className="video-portal" onClick={handleUserInteraction}>
+    <div className="video-portal">
       <header className="portal-header">
         <h1>Video News Portal</h1>
       </header>
@@ -137,11 +141,6 @@ const VideoPortal = () => {
         <div className="headline">
           <span>{headline}</span>
         </div>
-        {!userInteracted && (
-          <div className="click-overlay">
-            <p>Click anywhere to enable sound</p>
-          </div>
-        )}
         <button className="mute-btn" onClick={toggleMute}>
           {isMuted ? '🔇' : '🔊'}
         </button>
@@ -217,21 +216,6 @@ const VideoPortal = () => {
         @keyframes marquee {
           from { transform: translateX(0%); }
           to { transform: translateX(-100%); }
-        }
-        
-        .click-overlay {
-          position: absolute;
-          top: 0;
-          left: 0;
-          width: 100%;
-          height: 100%;
-          background: rgba(0, 0, 0, 0.7);
-          display: flex;
-          justify-content: center;
-          align-items: center;
-          color: white;
-          font-size: 18px;
-          z-index: 5;
         }
         
         .mute-btn {
